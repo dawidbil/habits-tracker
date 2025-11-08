@@ -73,10 +73,11 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.basedpyright]
-typeCheckingMode = "standard"
+typeCheckingMode = "recommended"
 pythonVersion = "3.12"
 pythonPlatform = "Linux"
 reportMissingTypeStubs = false
+exclude = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

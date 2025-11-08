@@ -48,6 +48,26 @@ def mark(when: str) -> None:
         console.print("[yellow]Warning:[/yellow] No habits defined in habits.yaml")
         sys.exit(1)
 
+    # Validate all habits
+    valid_habits: list[habits.Habit] = []
+    for habit in all_habits:
+        if habits.validate_habit(habit):
+            valid_habits.append(habit)
+        else:
+            habit_id = habit.get("id", "unknown")
+            freq = habit.get("frequency", "missing")
+            msg = (
+                f"[yellow]Warning:[/yellow] Invalid habit '{habit_id}' "
+                + f"(frequency: '{freq}'). Skipping."
+            )
+            console.print(msg)
+
+    if not valid_habits:
+        console.print("[red]Error:[/red] No valid habits found")
+        sys.exit(1)
+
+    all_habits = valid_habits
+
     # Get already completed habits for this date
     history_file = config.get_history_file()
     completed = tracker.get_completions_for_date(history_file, target_date)
@@ -99,13 +119,17 @@ def mark(when: str) -> None:
 
 
 @cli.command()
-def export() -> None:
+@click.option("--start", help="Start date (yyyy-mm-dd)")
+@click.option("--end", help="End date (yyyy-mm-dd)")
+def export(start: str | None, end: str | None) -> None:
     """Export history data as JSON to stdout.
 
     This command is intended for API consumption.
+    Optionally filter by start and end dates.
     """
     history_file = config.get_history_file()
-    output = tracker.export_history(history_file)
+    habits_file = config.get_habits_file()
+    output = tracker.export_history(history_file, habits_file, start, end)
     print(output)
 
 

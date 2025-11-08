@@ -87,11 +87,21 @@ def test_export_command_empty(runner, mock_config):
 
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data == {"completions": []}
+    # New format: empty dict when no habits defined
+    assert data == {}
 
 
 def test_export_command_with_data(runner, mock_config):
     """Test export command with existing data."""
+    # Create a habits file
+    habits_file = mock_config / "habits.yaml"
+    habits_file.write_text("""habits:
+  - id: exercise
+    name: Exercise
+    description: Workout
+    frequency: daily
+""")
+
     history_file = mock_config / "history.json"
     test_data: tracker.HistoryData = {
         "completions": [{"habit_id": "exercise", "date": "2025-11-07", "completed": True}]
@@ -102,7 +112,11 @@ def test_export_command_with_data(runner, mock_config):
 
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data == test_data
+    # New format: dict with habit IDs as keys
+    assert "exercise" in data
+    assert data["exercise"]["name"] == "Exercise"
+    assert data["exercise"]["frequency"] == "daily"
+    assert len(data["exercise"]["history"]) > 0
 
 
 def test_help_command(runner):
