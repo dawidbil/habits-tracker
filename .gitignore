@@ -150,7 +150,7 @@ Thumbs.db
 .ruff_cache/
 
 # Project-specific
-data/history.json
+data/
 tmp/
 trash/
 attic/

@@ -1,9 +1,9 @@
 """Historical data management for habit tracking."""
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class Completion(TypedDict):
@@ -18,6 +18,26 @@ class HistoryData(TypedDict):
     """Type definition for the history.json structure."""
 
     completions: list[Completion]
+
+
+# Status types for habit completion
+Status = Literal["completed", "not completed", "failed"]
+
+
+class DayStatus(TypedDict):
+    """Type definition for a single day's status."""
+
+    date: str
+    status: Status
+
+
+class HabitExport(TypedDict):
+    """Type definition for a habit in export format."""
+
+    name: str
+    description: str
+    frequency: str
+    history: list[DayStatus]
 
 
 def load_history(history_file: Path) -> HistoryData:
@@ -91,14 +111,171 @@ def get_completions_for_date(history_file: Path, target_date: date) -> set[str]:
     }
 
 
-def export_history(history_file: Path) -> str:
-    """Export history as JSON string.
+def compute_habit_status(
+    habit_id: str,
+    frequency: str,
+    target_date: date,
+    all_completions: list[Completion],
+) -> Status:
+    """Compute the status of a habit for a specific date.
+
+    Args:
+        habit_id: ID of the habit
+        frequency: Frequency type (daily, every_two_days, weekly:X)
+        target_date: Date to compute status for
+        all_completions: List of all completion records
+
+    Returns:
+        Status: "completed", "not completed", or "failed"
+    """
+    # Get completions for this habit
+    habit_completions = [c for c in all_completions if c["habit_id"] == habit_id and c["completed"]]
+
+    # Convert date strings to date objects and sort
+    completion_dates = sorted([date.fromisoformat(c["date"]) for c in habit_completions])
+
+    # Check if completed on target date
+    is_completed = target_date in completion_dates
+    if is_completed:
+        return "completed"
+
+    # Daily frequency: not completed = failed
+    if frequency == "daily":
+        return "failed"
+
+    # Every two days frequency
+    if frequency == "every_two_days":
+        # Check if yesterday was completed
+        yesterday = target_date - timedelta(days=1)
+        yesterday_completed = yesterday in completion_dates
+        
+        if yesterday_completed:
+            # Last completion was yesterday, so today is day 1 without
+            return "not completed"
+        
+        # Yesterday was not completed. Check if yesterday is the very first day
+        # in the entire tracking system (before any completions for any habit)
+        if all_completions:
+            earliest_completion = min(date.fromisoformat(c["date"]) for c in all_completions)
+            if yesterday < earliest_completion:
+                # Yesterday was before tracking started, so today is day 1
+                return "not completed"
+        else:
+            # No completions at all in the system, this is day 1
+            return "not completed"
+        
+        # Yesterday was also not completed (and was being tracked), so this is day 2+ = failed
+        return "failed"
+
+    # Weekly:X frequency
+    if frequency.startswith("weekly:"):
+        try:
+            required_count = int(frequency.split(":")[1])
+        except (ValueError, IndexError):
+            return "failed"
+
+        # Get the week boundaries (Monday to Sunday)
+        # weekday() returns 0 for Monday, 6 for Sunday
+        week_start = target_date - timedelta(days=target_date.weekday())
+        week_end = week_start + timedelta(days=6)
+
+        # Count completions in this week
+        week_completions = [d for d in completion_dates if week_start <= d <= week_end]
+        completion_count = len(week_completions)
+
+        if completion_count >= required_count:
+            return "not completed"
+        else:
+            return "failed"
+
+    # Unknown frequency
+    return "failed"
+
+
+def export_history(
+    history_file: Path,
+    habits_file: Path,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> str:
+    """Export history combined with metadata as JSON string.
 
     Args:
         history_file: Path to the history.json file
+        habits_file: Path to the habits.yaml file
+        start_date: Optional start date in yyyy-mm-dd format
+        end_date: Optional end date in yyyy-mm-dd format
 
     Returns:
-        JSON string of history data
+        JSON string with format: {habit_id: {name, description, frequency, history}}
     """
+    from habits_tracker import habits as habits_module
+
+    # Load habits metadata
+    try:
+        all_habits = habits_module.load_habits(habits_file)
+    except FileNotFoundError:
+        all_habits = []
+
+    # Load history
     history = load_history(history_file)
-    return json.dumps(history, indent=2)
+    completions = history["completions"]
+
+    # Determine date range
+    if completions:
+        completion_dates = [date.fromisoformat(c["date"]) for c in completions]
+        earliest_date = min(completion_dates)
+        latest_date = date.today()
+    else:
+        earliest_date = date.today()
+        latest_date = date.today()
+
+    # Apply start/end date filters
+    if start_date:
+        range_start = date.fromisoformat(start_date)
+    else:
+        range_start = earliest_date
+
+    if end_date:
+        range_end = date.fromisoformat(end_date)
+    else:
+        range_end = latest_date
+
+    # Build export data
+    export_data: dict[str, HabitExport] = {}
+
+    for habit in all_habits:
+        habit_id = habit["id"]
+        habit_name = habit["name"]
+        habit_desc = habit["description"]
+        habit_freq = habit["frequency"]
+
+        # Generate history for each day in range
+        day_statuses: list[DayStatus] = []
+        current_date = range_start
+
+        while current_date <= range_end:
+            status = compute_habit_status(
+                habit_id,
+                habit_freq,
+                current_date,
+                completions,
+            )
+
+            day_statuses.append(
+                {
+                    "date": current_date.isoformat(),
+                    "status": status,
+                }
+            )
+
+            current_date += timedelta(days=1)
+
+        export_data[habit_id] = {
+            "name": habit_name,
+            "description": habit_desc,
+            "frequency": habit_freq,
+            "history": day_statuses,
+        }
+
+    return json.dumps(export_data, indent=2)
