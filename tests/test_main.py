@@ -1,7 +1,6 @@
 """Tests for CLI commands."""
 
 import json
-from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -94,10 +93,8 @@ def test_export_command_empty(runner, mock_config):
 def test_export_command_with_data(runner, mock_config):
     """Test export command with existing data."""
     history_file = mock_config / "history.json"
-    test_data = {
-        "completions": [
-            {"habit_id": "exercise", "date": "2025-11-07", "completed": True}
-        ]
+    test_data: tracker.HistoryData = {
+        "completions": [{"habit_id": "exercise", "date": "2025-11-07", "completed": True}]
     }
     tracker.save_history(history_file, test_data)
 

@@ -2,7 +2,6 @@
 
 import json
 from datetime import date
-from pathlib import Path
 
 from habits_tracker import tracker
 
@@ -37,10 +36,8 @@ def test_load_history_with_data(tmp_path):
 def test_save_history(tmp_path):
     """Test saving history to file."""
     history_file = tmp_path / "history.json"
-    data = {
-        "completions": [
-            {"habit_id": "exercise", "date": "2025-11-07", "completed": True}
-        ]
+    data: tracker.HistoryData = {
+        "completions": [{"habit_id": "exercise", "date": "2025-11-07", "completed": True}]
     }
 
     tracker.save_history(history_file, data)
@@ -54,7 +51,7 @@ def test_save_history(tmp_path):
 def test_save_history_creates_directory(tmp_path):
     """Test saving history creates parent directory if needed."""
     history_file = tmp_path / "subdir" / "history.json"
-    data = {"completions": []}
+    data: tracker.HistoryData = {"completions": []}
 
     tracker.save_history(history_file, data)
 
@@ -90,9 +87,7 @@ def test_mark_habits_replaces_existing(tmp_path):
 
     result = tracker.load_history(history_file)
     # Should only have the latest marking for this date
-    completions_for_date = [
-        c for c in result["completions"] if c["date"] == "2025-11-07"
-    ]
+    completions_for_date = [c for c in result["completions"] if c["date"] == "2025-11-07"]
     assert len(completions_for_date) == 1
     assert completions_for_date[0]["habit_id"] == "reading"
 
@@ -100,7 +95,7 @@ def test_mark_habits_replaces_existing(tmp_path):
 def test_get_completions_for_date(tmp_path):
     """Test getting completed habits for a specific date."""
     history_file = tmp_path / "history.json"
-    data = {
+    data: tracker.HistoryData = {
         "completions": [
             {"habit_id": "exercise", "date": "2025-11-07", "completed": True},
             {"habit_id": "meditation", "date": "2025-11-07", "completed": True},
@@ -126,10 +121,8 @@ def test_get_completions_for_date_no_data(tmp_path):
 def test_export_history(tmp_path):
     """Test exporting history as JSON string."""
     history_file = tmp_path / "history.json"
-    data = {
-        "completions": [
-            {"habit_id": "exercise", "date": "2025-11-07", "completed": True}
-        ]
+    data: tracker.HistoryData = {
+        "completions": [{"habit_id": "exercise", "date": "2025-11-07", "completed": True}]
     }
     tracker.save_history(history_file, data)
 

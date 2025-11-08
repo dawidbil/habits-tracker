@@ -1,8 +1,5 @@
 """Tests for configuration management."""
 
-import os
-from pathlib import Path
-
 from habits_tracker import config
 
 

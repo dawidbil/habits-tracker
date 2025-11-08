@@ -1,7 +1,5 @@
 """Tests for habits metadata management."""
 
-from pathlib import Path
-
 import pytest
 
 from habits_tracker import habits
@@ -61,7 +59,7 @@ def test_load_habits_file_not_found(tmp_path):
 
 def test_validate_habit_valid():
     """Test validating a complete habit."""
-    habit = {
+    habit: habits.Habit = {
         "id": "exercise",
         "name": "Exercise",
         "description": "Activity",
@@ -73,13 +71,15 @@ def test_validate_habit_valid():
 
 def test_validate_habit_missing_field():
     """Test validating habit with missing required field."""
-    habit = {"id": "exercise", "name": "Exercise", "frequency": "daily"}
+    # Type ignore needed as we're testing invalid data
+    habit: habits.Habit = {"id": "exercise", "name": "Exercise", "frequency": "daily"}  # type: ignore[typeddict-item]
 
     assert habits.validate_habit(habit) is False
 
 
 def test_validate_habit_empty():
     """Test validating empty habit."""
-    habit = {}
+    # Type ignore needed as we're testing invalid data
+    habit: habits.Habit = {}  # type: ignore[typeddict-item]
 
     assert habits.validate_habit(habit) is False
