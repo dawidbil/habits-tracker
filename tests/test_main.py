@@ -59,26 +59,59 @@ def test_cli_help(runner):
     assert "Commands:" in result.output
 
 
-def test_init_command(runner, mock_config):
-    """Test init command creates template files."""
-    result = runner.invoke(main.cli, ["init"])
+@patch("subprocess.run")
+def test_edit_command_creates_file(mock_subprocess, runner, mock_config):
+    """Test edit command creates template file if it doesn't exist."""
+    mock_subprocess.return_value = MagicMock(returncode=0)
+
+    result = runner.invoke(main.cli, ["edit"])
 
     assert result.exit_code == 0
-    assert "initialized" in result.output.lower()
+    assert "Created" in result.output
     assert (mock_config / "habits.yaml").exists()
-    assert (mock_config / "history.json").exists()
+
+    # Verify template has comments
+    content = (mock_config / "habits.yaml").read_text()
+    assert "# Habits Tracker Configuration" in content
+    assert "# Valid frequency values:" in content
+    assert "frequency: daily" in content
 
 
-def test_init_command_existing_files(runner, mock_config):
-    """Test init command with existing files."""
-    # Create files first
-    runner.invoke(main.cli, ["init"])
+@patch("subprocess.run")
+def test_edit_command_opens_editor(mock_subprocess, runner, mock_config):
+    """Test edit command opens editor with existing file."""
+    # Create file first
+    habits_file = mock_config / "habits.yaml"
+    habits_file.write_text("""habits:
+  - id: test
+    name: Test
+    description: Test habit
+    frequency: daily
+    start_date: "2025-11-01"
+""")
 
-    # Run init again
-    result = runner.invoke(main.cli, ["init"])
+    mock_subprocess.return_value = MagicMock(returncode=0)
+
+    result = runner.invoke(main.cli, ["edit"])
 
     assert result.exit_code == 0
-    assert "already exists" in result.output
+    assert "Editor closed" in result.output
+    mock_subprocess.assert_called_once()
+    # Verify editor was called with the habits file
+    args = mock_subprocess.call_args[0][0]
+    assert args[0] == "nano"
+    assert "habits.yaml" in str(args[1])
+
+
+@patch("subprocess.run")
+def test_edit_command_editor_failure(mock_subprocess, runner, mock_config):
+    """Test edit command when editor fails."""
+    mock_subprocess.side_effect = FileNotFoundError("Editor not found")
+
+    result = runner.invoke(main.cli, ["edit"])
+
+    assert result.exit_code == 1
+    assert "error" in result.output.lower()
 
 
 def test_export_command_empty(runner, mock_config):
@@ -100,6 +133,7 @@ def test_export_command_with_data(runner, mock_config):
     name: Exercise
     description: Workout
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     history_file = mock_config / "history.json"
@@ -139,6 +173,7 @@ def test_mark_today_command(mock_subprocess, runner, mock_config):
     name: Exercise
     description: Activity
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     # Mock editor to mark the habit
@@ -174,6 +209,7 @@ def test_mark_yesterday_command(mock_subprocess, runner, mock_config):
     name: Exercise
     description: Activity
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     # Mock editor (no changes, no habits marked)
@@ -212,6 +248,7 @@ def test_mark_editor_failure(mock_subprocess, runner, mock_config):
     name: Exercise
     description: Activity
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     mock_subprocess.side_effect = FileNotFoundError("Editor not found")

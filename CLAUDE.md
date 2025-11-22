@@ -25,7 +25,7 @@ A command-line tool for tracking daily habits with YAML-based metadata and JSON 
 2. **habits.py** - YAML metadata loading
    - Loads and validates habits from habits.yaml
    - Type-checked with TypedDict
-   - Schema: id, name, description, frequency
+   - Schema: id, name, description, frequency, start_date, end_date (optional)
 
 3. **tracker.py** - Historical data management
    - Manages history.json (completions tracking)
@@ -33,19 +33,20 @@ A command-line tool for tracking daily habits with YAML-based metadata and JSON 
    - Export functionality for API integration
 
 4. **main.py** - CLI interface (Click framework)
-   - `habits init` - Initialize with templates
+   - `habits edit` - Edit habits.yaml in configured editor (creates file if needed)
    - `habits mark [today|yesterday]` - Interactive marking
    - `habits export` - JSON export to stdout
    - `habits help` - File structure documentation
 
 ### Data Flow
 
-1. User defines habits in `data/habits.yaml` (manually edited)
+1. User defines habits in `data/habits.yaml` (via `habits edit` command)
 2. User runs `habits mark today/yesterday`
-3. CLI opens editor with habit checklist
-4. User marks completed habits with 'x'
-5. CLI parses selections and updates `data/history.json`
-6. API calls `habits export` to retrieve JSON data
+3. CLI filters habits to show only those active on the target date (based on start_date/end_date)
+4. CLI opens editor with habit checklist
+5. User marks completed habits with 'x'
+6. CLI parses selections and updates `data/history.json`
+7. API calls `habits export` to retrieve JSON data (respecting habit date ranges)
 
 ### File Structure
 
@@ -83,7 +84,9 @@ habits:
   - id: unique_id
     name: Display Name
     description: What the habit involves
-    frequency: daily  # or 3x_week, etc.
+    frequency: daily  # daily, every_two_days, weekly:1-6
+    start_date: "2025-11-01"  # When habit tracking begins (required)
+    end_date: "2025-12-31"  # When habit tracking ends (optional)
 ```
 
 **history.json** - Auto-generated completion tracking:
@@ -149,9 +152,34 @@ The `habits export` command is designed for API consumption:
 ```bash
 # API can call this command and capture JSON output
 habits export
+
+# Export with optional date filters
+habits export --start 2025-11-01 --end 2025-11-30
 ```
 
-**Output:** Complete history.json as formatted JSON to stdout
+**Output Format:**
+```json
+{
+  "habit_id": {
+    "name": "Habit Name",
+    "description": "Habit description",
+    "frequency": "daily",
+    "start_date": "2025-11-01",
+    "end_date": "2025-12-31",  # Optional field
+    "history": [
+      {"date": "2025-11-07", "status": "completed"},
+      {"date": "2025-11-08", "status": "failed"}
+    ]
+  }
+}
+```
+
+**Date Filtering Behavior:**
+- Export respects habit's `start_date` and `end_date` (if present)
+- User-provided `--start` and `--end` filters intersect with habit dates
+- History only includes dates within habit's active period
+- If habit has `end_date`, export stops at that date
+- If no `end_date`, export continues through today
 
 **Use case:** API running on same host calls this command via subprocess to retrieve habit data
 
@@ -190,12 +218,14 @@ habits export
 
 ### Adding a New Habit
 
-Edit `data/habits.yaml`:
+Run `habits edit` to open the editor, then add:
 ```yaml
 - id: new_habit
   name: New Habit
   description: What it involves
   frequency: daily
+  start_date: "2025-11-22"  # Date when tracking begins
+  # end_date: "2025-12-31"  # Optional: when to stop tracking
 ```
 
 ### Modifying CLI Commands

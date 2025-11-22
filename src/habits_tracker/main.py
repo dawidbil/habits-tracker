@@ -39,7 +39,7 @@ def mark(when: str) -> None:
         all_habits = habits.load_habits(habits_file)
     except FileNotFoundError:
         console.print(
-            "[red]Error:[/red] habits.yaml not found. Run 'habits init' first.",
+            "[red]Error:[/red] habits.yaml not found. Run 'habits edit' to create it.",
             style="red",
         )
         sys.exit(1)
@@ -66,7 +66,28 @@ def mark(when: str) -> None:
         console.print("[red]Error:[/red] No valid habits found")
         sys.exit(1)
 
-    all_habits = valid_habits
+    # Filter habits to only include those active on the target date
+    active_habits: list[habits.Habit] = []
+    for habit in valid_habits:
+        habit_start = date.fromisoformat(habit["start_date"])
+        habit_end_str = habit.get("end_date")
+        habit_end = date.fromisoformat(habit_end_str) if habit_end_str else None
+
+        # Habit is active if: start_date <= target_date AND (no end_date OR target_date <= end_date)
+        is_active = habit_start <= target_date and (habit_end is None or target_date <= habit_end)
+
+        if is_active:
+            active_habits.append(habit)
+
+    if not active_habits:
+        msg = (
+            f"[yellow]Warning:[/yellow] No habits are active on {target_date}. "
+            + "Check start_date and end_date in habits.yaml"
+        )
+        console.print(msg)
+        sys.exit(1)
+
+    all_habits = active_habits
 
     # Get already completed habits for this date
     history_file = config.get_history_file()
@@ -75,25 +96,25 @@ def mark(when: str) -> None:
     # Create temp file with habit list
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tf:
         temp_path = Path(tf.name)
-        tf.write(f"# Mark completed habits for {target_date}\n")
-        tf.write("# Add 'x' or any character before the habit ID to mark as done\n")
-        tf.write("# Lines without a mark will be considered not completed\n\n")
+        _ = tf.write(f"# Mark completed habits for {target_date}\n")
+        _ = tf.write("# Add 'x' or any character before the habit ID to mark as done\n")
+        _ = tf.write("# Lines without a mark will be considered not completed\n\n")
 
         for habit in all_habits:
             mark_char = "x" if habit["id"] in completed else " "
-            tf.write(f"[{mark_char}] {habit['id']}: {habit['name']}\n")
+            _ = tf.write(f"[{mark_char}] {habit['id']}: {habit['name']}\n")
 
     # Open editor
     editor = config.get_editor()
     try:
-        subprocess.run([editor, str(temp_path)], check=True)
+        _ = subprocess.run([editor, str(temp_path)], check=True)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         console.print(f"[red]Error:[/red] Failed to open editor '{editor}': {e}")
         temp_path.unlink()
         sys.exit(1)
 
     # Parse results
-    completed_ids = []
+    completed_ids: list[str] = []
     with temp_path.open() as f:
         for line in f:
             line = line.strip()
@@ -134,44 +155,51 @@ def export(start: str | None, end: str | None) -> None:
 
 
 @cli.command()
-def init() -> None:
-    """Initialize habits tracker with template files."""
+def edit() -> None:
+    """Open habits.yaml in your configured editor.
+
+    Creates the file with a commented template if it doesn't exist.
+    """
     data_dir = config.get_data_dir()
-    data_dir.mkdir(parents=True, exist_ok=True)
-
     habits_file = config.get_habits_file()
-    history_file = config.get_history_file()
 
-    # Create habits.yaml template if it doesn't exist
+    # Create file with template if it doesn't exist
     if not habits_file.exists():
-        template = """habits:
-  - id: exercise
-    name: Exercise
-    description: 30 minutes of physical activity
-    frequency: daily
-  - id: meditation
-    name: Meditation
-    description: 10 minutes of mindfulness
-    frequency: daily
-  - id: reading
-    name: Reading
-    description: Read for 20 minutes
-    frequency: daily
+        data_dir.mkdir(parents=True, exist_ok=True)
+        template = """# Habits Tracker Configuration
+# Define your habits below following this structure
+
+habits:
+  # Example habit - customize or replace this
+  - id: exercise              # Unique identifier (used in history tracking)
+    name: Exercise            # Display name shown in the marking interface
+    description: 30 minutes of physical activity  # What this habit involves
+    frequency: daily          # How often this habit should be completed
+    start_date: "2025-11-22"  # Date when this habit tracking begins (yyyy-mm-dd)
+    # end_date: "2025-12-31"  # Optional: date when this habit tracking ends
+
+# Valid frequency values:
+# - daily: Must be completed every day
+# - every_two_days: Must be completed at least once every 2 days
+# - weekly:1 through weekly:6: Must be completed X times per week (Monday-Sunday)
+#
+# Required fields: id, name, description, frequency, start_date
+# Optional fields: end_date (omit for ongoing habits)
+# The 'id' must be unique and will be used to track completion history
+# Dates must be in yyyy-mm-dd format
 """
-        habits_file.write_text(template)
+        _ = habits_file.write_text(template)
         console.print(f"[green]✓[/green] Created {habits_file}")
-    else:
-        console.print(f"[yellow]→[/yellow] {habits_file} already exists")
 
-    # Create empty history.json if it doesn't exist
-    if not history_file.exists():
-        tracker.save_history(history_file, {"completions": []})
-        console.print(f"[green]✓[/green] Created {history_file}")
-    else:
-        console.print(f"[yellow]→[/yellow] {history_file} already exists")
+    # Open editor
+    editor = config.get_editor()
+    try:
+        _ = subprocess.run([editor, str(habits_file)], check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        console.print(f"[red]Error:[/red] Failed to open editor '{editor}': {e}")
+        sys.exit(1)
 
-    console.print("\n[green]Habits tracker initialized![/green]")
-    console.print("Edit data/habits.yaml to customize your habits.")
+    console.print(f"[green]✓[/green] Editor closed. Changes saved to {habits_file.name}")
 
 
 @cli.command()
@@ -189,11 +217,13 @@ def help_cmd() -> None:
     - id: unique_id          # Short identifier
       name: Display Name     # Human-readable name
       description: Details   # What the habit involves
-      frequency: daily       # How often (daily, 3x_week, etc.)
+      frequency: daily       # How often (daily, every_two_days, weekly:X)
+      start_date: "2025-11-22"  # When tracking begins (yyyy-mm-dd)
+      # end_date: "2025-12-31"  # Optional: when tracking ends
 """)
 
     console.print("[bold cyan]Commands:[/bold cyan]")
-    console.print("  habits init              - Initialize with template files")
+    console.print("  habits edit              - Edit habits.yaml in your configured editor")
     console.print("  habits mark today        - Mark today's completed habits")
     console.print("  habits mark yesterday    - Mark yesterday's habits")
     console.print("  habits export            - Export history as JSON (for API)")

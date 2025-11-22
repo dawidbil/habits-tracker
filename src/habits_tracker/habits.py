@@ -1,7 +1,8 @@
 """Habits metadata management."""
 
+from datetime import date
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
 import yaml
 
@@ -13,6 +14,8 @@ class Habit(TypedDict):
     name: str
     description: str
     frequency: str
+    start_date: str
+    end_date: NotRequired[str]
 
 
 class HabitsData(TypedDict):
@@ -75,11 +78,12 @@ def load_habits(habits_file: Path) -> list[Habit]:
         raise FileNotFoundError(msg)
 
     with habits_file.open() as f:
-        data: HabitsData = yaml.safe_load(f)
+        raw_data = yaml.safe_load(f)
 
-    if not data or "habits" not in data:
+    if not raw_data or not isinstance(raw_data, dict) or "habits" not in raw_data:
         return []
 
+    data = cast(HabitsData, cast(object, raw_data))
     return data["habits"]
 
 
@@ -92,9 +96,28 @@ def validate_habit(habit: Habit) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    required_fields = ["id", "name", "description", "frequency"]
+    required_fields = ["id", "name", "description", "frequency", "start_date"]
     if not all(field in habit for field in required_fields):
         return False
 
     # Validate frequency format
-    return is_valid_frequency(habit["frequency"])
+    if not is_valid_frequency(habit["frequency"]):
+        return False
+
+    # Validate start_date format
+    try:
+        start = date.fromisoformat(habit["start_date"])
+    except (ValueError, KeyError):
+        return False
+
+    # Validate end_date format if present
+    if "end_date" in habit and habit["end_date"]:
+        try:
+            end = date.fromisoformat(habit["end_date"])
+            # end_date must be after start_date
+            if end <= start:
+                return False
+        except ValueError:
+            return False
+
+    return True

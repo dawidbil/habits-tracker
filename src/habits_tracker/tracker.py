@@ -3,7 +3,7 @@
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
 
 class Completion(TypedDict):
@@ -37,6 +37,8 @@ class HabitExport(TypedDict):
     name: str
     description: str
     frequency: str
+    start_date: str
+    end_date: NotRequired[str]
     history: list[DayStatus]
 
 
@@ -53,8 +55,9 @@ def load_history(history_file: Path) -> HistoryData:
         return {"completions": []}
 
     with history_file.open() as f:
-        data: HistoryData = json.load(f)
+        raw_data = json.load(f)
 
+    data = cast(HistoryData, raw_data)
     return data
 
 
@@ -148,11 +151,11 @@ def compute_habit_status(
         # Check if yesterday was completed
         yesterday = target_date - timedelta(days=1)
         yesterday_completed = yesterday in completion_dates
-        
+
         if yesterday_completed:
             # Last completion was yesterday, so today is day 1 without
             return "not completed"
-        
+
         # Yesterday was not completed. Check if yesterday is the very first day
         # in the entire tracking system (before any completions for any habit)
         if all_completions:
@@ -163,7 +166,7 @@ def compute_habit_status(
         else:
             # No completions at all in the system, this is day 1
             return "not completed"
-        
+
         # Yesterday was also not completed (and was being tracked), so this is day 2+ = failed
         return "failed"
 
@@ -221,25 +224,18 @@ def export_history(
     history = load_history(history_file)
     completions = history["completions"]
 
-    # Determine date range
+    # Determine default date range from completions
     if completions:
         completion_dates = [date.fromisoformat(c["date"]) for c in completions]
-        earliest_date = min(completion_dates)
-        latest_date = date.today()
+        earliest_completion = min(completion_dates)
+        latest_completion = date.today()
     else:
-        earliest_date = date.today()
-        latest_date = date.today()
+        earliest_completion = date.today()
+        latest_completion = date.today()
 
-    # Apply start/end date filters
-    if start_date:
-        range_start = date.fromisoformat(start_date)
-    else:
-        range_start = earliest_date
-
-    if end_date:
-        range_end = date.fromisoformat(end_date)
-    else:
-        range_end = latest_date
+    # Parse user-provided filter dates
+    filter_start = date.fromisoformat(start_date) if start_date else earliest_completion
+    filter_end = date.fromisoformat(end_date) if end_date else latest_completion
 
     # Build export data
     export_data: dict[str, HabitExport] = {}
@@ -249,11 +245,22 @@ def export_history(
         habit_name = habit["name"]
         habit_desc = habit["description"]
         habit_freq = habit["frequency"]
+        habit_start_str = habit["start_date"]
+        habit_end_str = habit.get("end_date")
+
+        # Parse habit's active period
+        habit_start = date.fromisoformat(habit_start_str)
+        habit_end = date.fromisoformat(habit_end_str) if habit_end_str else date.today()
+
+        # Compute intersection of habit's active period and user's filter range
+        range_start = max(habit_start, filter_start)
+        range_end = min(habit_end, filter_end)
 
         # Generate history for each day in range
         day_statuses: list[DayStatus] = []
         current_date = range_start
 
+        # Only generate history if the date range is valid
         while current_date <= range_end:
             status = compute_habit_status(
                 habit_id,
@@ -271,11 +278,19 @@ def export_history(
 
             current_date += timedelta(days=1)
 
-        export_data[habit_id] = {
+        # Build export entry
+        export_entry: HabitExport = {
             "name": habit_name,
             "description": habit_desc,
             "frequency": habit_freq,
+            "start_date": habit_start_str,
             "history": day_statuses,
         }
+
+        # Add end_date if present
+        if habit_end_str:
+            export_entry["end_date"] = habit_end_str
+
+        export_data[habit_id] = export_entry
 
     return json.dumps(export_data, indent=2)

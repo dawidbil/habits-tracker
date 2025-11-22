@@ -31,7 +31,7 @@ def get_editor() -> str:
     # Load .env file if it exists
     env_file = get_project_root() / ".env"
     if env_file.exists():
-        load_dotenv(env_file)
+        _ = load_dotenv(env_file)
 
     # Try project .env first, then system EDITOR, then default
     editor = os.getenv("EDITOR")

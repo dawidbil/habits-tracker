@@ -13,10 +13,12 @@ def test_load_habits_success(tmp_path):
     name: Exercise
     description: 30 minutes of activity
     frequency: daily
+    start_date: "2025-11-01"
   - id: reading
     name: Reading
     description: Read for 20 minutes
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     result = habits.load_habits(habits_file)
@@ -64,6 +66,7 @@ def test_validate_habit_valid():
         "name": "Exercise",
         "description": "Activity",
         "frequency": "daily",
+        "start_date": "2025-11-01",
     }
 
     assert habits.validate_habit(habit) is True
@@ -142,6 +145,7 @@ def test_validate_habit_with_valid_daily_frequency():
         "name": "Exercise",
         "description": "Activity",
         "frequency": "daily",
+        "start_date": "2025-11-01",
     }
 
     assert habits.validate_habit(habit) is True
@@ -154,6 +158,89 @@ def test_validate_habit_with_valid_weekly_frequency():
         "name": "Gym",
         "description": "Go to gym",
         "frequency": "weekly:3",
+        "start_date": "2025-11-01",
     }
 
     assert habits.validate_habit(habit) is True
+
+
+def test_validate_habit_missing_start_date():
+    """Test validate_habit rejects habits without start_date."""
+    # Type ignore needed as we're testing invalid data
+    habit: habits.Habit = {  # type: ignore[typeddict-item]
+        "id": "exercise",
+        "name": "Exercise",
+        "description": "Activity",
+        "frequency": "daily",
+    }
+
+    assert habits.validate_habit(habit) is False
+
+
+def test_validate_habit_invalid_start_date():
+    """Test validate_habit rejects habits with invalid start_date format."""
+    habit: habits.Habit = {
+        "id": "exercise",
+        "name": "Exercise",
+        "description": "Activity",
+        "frequency": "daily",
+        "start_date": "invalid-date",
+    }
+
+    assert habits.validate_habit(habit) is False
+
+
+def test_validate_habit_with_end_date():
+    """Test validate_habit accepts habits with valid end_date."""
+    habit: habits.Habit = {
+        "id": "exercise",
+        "name": "Exercise",
+        "description": "Activity",
+        "frequency": "daily",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-31",
+    }
+
+    assert habits.validate_habit(habit) is True
+
+
+def test_validate_habit_invalid_end_date():
+    """Test validate_habit rejects habits with invalid end_date format."""
+    habit: habits.Habit = {
+        "id": "exercise",
+        "name": "Exercise",
+        "description": "Activity",
+        "frequency": "daily",
+        "start_date": "2025-11-01",
+        "end_date": "invalid-date",
+    }
+
+    assert habits.validate_habit(habit) is False
+
+
+def test_validate_habit_end_date_before_start_date():
+    """Test validate_habit rejects habits where end_date is before start_date."""
+    habit: habits.Habit = {
+        "id": "exercise",
+        "name": "Exercise",
+        "description": "Activity",
+        "frequency": "daily",
+        "start_date": "2025-11-10",
+        "end_date": "2025-11-05",
+    }
+
+    assert habits.validate_habit(habit) is False
+
+
+def test_validate_habit_end_date_equals_start_date():
+    """Test validate_habit rejects habits where end_date equals start_date."""
+    habit: habits.Habit = {
+        "id": "exercise",
+        "name": "Exercise",
+        "description": "Activity",
+        "frequency": "daily",
+        "start_date": "2025-11-10",
+        "end_date": "2025-11-10",
+    }
+
+    assert habits.validate_habit(habit) is False

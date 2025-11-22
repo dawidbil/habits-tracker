@@ -50,6 +50,7 @@ packages = ["src/habits_tracker"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+exclude = ["devtools"]
 
 [tool.ruff.lint]
 select = [
@@ -77,7 +78,8 @@ typeCheckingMode = "recommended"
 pythonVersion = "3.12"
 pythonPlatform = "Linux"
 reportMissingTypeStubs = false
-exclude = ["tests"]
+reportAny = false
+exclude = ["tests", "devtools"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

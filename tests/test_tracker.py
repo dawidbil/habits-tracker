@@ -182,9 +182,9 @@ def test_compute_habit_status_every_two_days_failed():
 def test_compute_habit_status_every_two_days_no_previous():
     """Test every_two_days habit with no previous completions."""
     completions: list[tracker.Completion] = []
-    
+
     status = tracker.compute_habit_status("gym", "every_two_days", date(2025, 11, 7), completions)
-    
+
     assert status == "not completed"
 
 
@@ -194,13 +194,17 @@ def test_compute_habit_status_every_two_days_consecutive_failures():
     completions: list[tracker.Completion] = [
         {"habit_id": "other", "date": "2025-11-05", "completed": True}
     ]
-    
+
     # Nov 7: first day without completion
-    status_day1 = tracker.compute_habit_status("meditation", "every_two_days", date(2025, 11, 7), completions)
+    status_day1 = tracker.compute_habit_status(
+        "meditation", "every_two_days", date(2025, 11, 7), completions
+    )
     assert status_day1 == "failed"  # Yesterday (Nov 6) also not completed
-    
+
     # Nov 8: second day without completion
-    status_day2 = tracker.compute_habit_status("meditation", "every_two_days", date(2025, 11, 8), completions)
+    status_day2 = tracker.compute_habit_status(
+        "meditation", "every_two_days", date(2025, 11, 8), completions
+    )
     assert status_day2 == "failed"  # Yesterday (Nov 7) also not completed
 
 
@@ -282,6 +286,7 @@ def test_export_history_basic(tmp_path):
     name: Exercise
     description: 30 minutes
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     # Create history file
@@ -303,6 +308,8 @@ def test_export_history_basic(tmp_path):
     assert parsed["exercise"]["name"] == "Exercise"
     assert parsed["exercise"]["description"] == "30 minutes"
     assert parsed["exercise"]["frequency"] == "daily"
+    assert parsed["exercise"]["start_date"] == "2025-11-01"
+    assert "end_date" not in parsed["exercise"]
     assert len(parsed["exercise"]["history"]) == 2
 
     # Check day statuses
@@ -321,6 +328,7 @@ def test_export_history_with_date_filter(tmp_path):
     name: Reading
     description: 20 minutes
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     # Create history with multiple dates
@@ -358,10 +366,12 @@ def test_export_history_multiple_habits(tmp_path):
     name: Exercise
     description: Workout
     frequency: daily
+    start_date: "2025-11-01"
   - id: meditation
     name: Meditation
     description: Mindfulness
     frequency: every_two_days
+    start_date: "2025-11-01"
 """)
 
     # Create history
@@ -399,6 +409,7 @@ def test_export_history_weekly_habit(tmp_path):
     name: Gym
     description: Strength training
     frequency: weekly:3
+    start_date: "2025-11-01"
 """)
 
     # Create history - completed 3 times in week Nov 10-16
@@ -458,6 +469,7 @@ def test_export_history_no_history(tmp_path):
     name: Running
     description: Morning run
     frequency: daily
+    start_date: "2025-11-01"
 """)
 
     # No history file
@@ -472,3 +484,136 @@ def test_export_history_no_history(tmp_path):
     assert "running" in parsed
     assert len(parsed["running"]["history"]) == 1
     assert parsed["running"]["history"][0]["status"] == "failed"
+
+
+def test_export_history_with_start_date_filter(tmp_path):
+    """Test export respects habit start_date."""
+    # Create habits file with start date on Nov 5
+    habits_file = tmp_path / "habits.yaml"
+    habits_file.write_text("""habits:
+  - id: new_habit
+    name: New Habit
+    description: Started mid-tracking
+    frequency: daily
+    start_date: "2025-11-05"
+""")
+
+    # Create history with completions before and after start date
+    history_file = tmp_path / "history.json"
+    history_data: tracker.HistoryData = {
+        "completions": [
+            {"habit_id": "new_habit", "date": "2025-11-03", "completed": True},  # Before start
+            {"habit_id": "new_habit", "date": "2025-11-05", "completed": True},  # On start
+            {"habit_id": "new_habit", "date": "2025-11-07", "completed": True},  # After start
+        ]
+    }
+    tracker.save_history(history_file, history_data)
+
+    # Export from Nov 1 to Nov 10 (but habit only starts on Nov 5)
+    result = tracker.export_history(history_file, habits_file, "2025-11-01", "2025-11-10")
+
+    parsed = json.loads(result)
+
+    # Should only have history from Nov 5 onwards (6 days: Nov 5-10)
+    assert len(parsed["new_habit"]["history"]) == 6
+    assert parsed["new_habit"]["history"][0]["date"] == "2025-11-05"
+    assert parsed["new_habit"]["history"][-1]["date"] == "2025-11-10"
+
+
+def test_export_history_with_end_date_filter(tmp_path):
+    """Test export respects habit end_date."""
+    # Create habits file with end date on Nov 8
+    habits_file = tmp_path / "habits.yaml"
+    habits_file.write_text("""habits:
+  - id: old_habit
+    name: Old Habit
+    description: Ended early
+    frequency: daily
+    start_date: "2025-11-01"
+    end_date: "2025-11-08"
+""")
+
+    # Create history with completions before and after end date
+    history_file = tmp_path / "history.json"
+    history_data: tracker.HistoryData = {
+        "completions": [
+            {"habit_id": "old_habit", "date": "2025-11-05", "completed": True},  # Before end
+            {"habit_id": "old_habit", "date": "2025-11-08", "completed": True},  # On end
+            {"habit_id": "old_habit", "date": "2025-11-10", "completed": True},  # After end
+        ]
+    }
+    tracker.save_history(history_file, history_data)
+
+    # Export from Nov 1 to Nov 15 (but habit ends on Nov 8)
+    result = tracker.export_history(history_file, habits_file, "2025-11-01", "2025-11-15")
+
+    parsed = json.loads(result)
+
+    # Should only have history until Nov 8 (8 days: Nov 1-8)
+    assert len(parsed["old_habit"]["history"]) == 8
+    assert parsed["old_habit"]["history"][0]["date"] == "2025-11-01"
+    assert parsed["old_habit"]["history"][-1]["date"] == "2025-11-08"
+    assert parsed["old_habit"]["end_date"] == "2025-11-08"
+
+
+def test_export_history_intersection_of_dates(tmp_path):
+    """Test export with intersection of habit dates and user filter dates."""
+    # Habit active from Nov 5 to Nov 15
+    habits_file = tmp_path / "habits.yaml"
+    habits_file.write_text("""habits:
+  - id: bounded_habit
+    name: Bounded Habit
+    description: Has both start and end
+    frequency: daily
+    start_date: "2025-11-05"
+    end_date: "2025-11-15"
+""")
+
+    # Create history
+    history_file = tmp_path / "history.json"
+    history_data: tracker.HistoryData = {
+        "completions": [
+            {"habit_id": "bounded_habit", "date": "2025-11-07", "completed": True},
+        ]
+    }
+    tracker.save_history(history_file, history_data)
+
+    # Export from Nov 1 to Nov 20 (intersection should be Nov 5-15)
+    result = tracker.export_history(history_file, habits_file, "2025-11-01", "2025-11-20")
+    parsed = json.loads(result)
+    assert len(parsed["bounded_habit"]["history"]) == 11  # Nov 5-15 = 11 days
+    assert parsed["bounded_habit"]["history"][0]["date"] == "2025-11-05"
+    assert parsed["bounded_habit"]["history"][-1]["date"] == "2025-11-15"
+
+    # Export from Nov 8 to Nov 12 (intersection should be Nov 8-12)
+    result2 = tracker.export_history(history_file, habits_file, "2025-11-08", "2025-11-12")
+    parsed2 = json.loads(result2)
+    assert len(parsed2["bounded_habit"]["history"]) == 5  # Nov 8-12 = 5 days
+    assert parsed2["bounded_habit"]["history"][0]["date"] == "2025-11-08"
+    assert parsed2["bounded_habit"]["history"][-1]["date"] == "2025-11-12"
+
+
+def test_export_history_no_intersection(tmp_path):
+    """Test export when filter dates don't overlap with habit dates."""
+    # Habit active from Nov 10 to Nov 20
+    habits_file = tmp_path / "habits.yaml"
+    habits_file.write_text("""habits:
+  - id: future_habit
+    name: Future Habit
+    description: Starts in future
+    frequency: daily
+    start_date: "2025-11-10"
+    end_date: "2025-11-20"
+""")
+
+    # Create history
+    history_file = tmp_path / "history.json"
+    tracker.save_history(history_file, {"completions": []})
+
+    # Export from Nov 1 to Nov 5 (before habit starts)
+    result = tracker.export_history(history_file, habits_file, "2025-11-01", "2025-11-05")
+    parsed = json.loads(result)
+
+    # Should have the habit but with empty history (no overlap)
+    assert "future_habit" in parsed
+    assert len(parsed["future_habit"]["history"]) == 0
